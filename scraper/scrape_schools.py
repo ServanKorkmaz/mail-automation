@@ -1,12 +1,11 @@
-"""Scrape school names from okul.com.tr with pagination support."""
+"""Scrape school names from okul.com.tr with pagination support using Playwright."""
 import asyncio
 import logging
 import random
 from typing import List
-from urllib.parse import urljoin
 
-import aiohttp
 from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright, Browser, Page
 
 logger = logging.getLogger(__name__)
 
@@ -14,81 +13,94 @@ logger = logging.getLogger(__name__)
 class SchoolScraper:
     def __init__(self, base_url: str):
         self.base_url = base_url
-        self.session = None
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Cache-Control": "max-age=0",
-        }
+        self.browser: Browser | None = None
+        self.playwright = None
 
     async def __aenter__(self):
-        # Use cookie jar for session management
-        cookie_jar = aiohttp.CookieJar(unsafe=True)
-        connector = aiohttp.TCPConnector(limit=10, limit_per_host=5)
-        self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=60, connect=30),
-            headers=self.headers,
-            cookie_jar=cookie_jar,
-            connector=connector
+        # Launch Playwright browser with stealth settings
+        self.playwright = await async_playwright().start()
+        self.browser = await self.playwright.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+            ]
         )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
+        if self.browser:
+            await self.browser.close()
+        if self.playwright:
+            await self.playwright.stop()
 
-    async def fetch_with_retry(self, url: str, max_retries: int = 3) -> str | None:
-        """Fetch URL with retry logic and Cloudflare handling."""
+    async def fetch_with_playwright(self, url: str, max_retries: int = 3) -> str | None:
+        """Fetch URL using Playwright with retry logic."""
         for attempt in range(max_retries):
             try:
-                # Add random delay to avoid rate limiting
                 if attempt > 0:
-                    delay = random.uniform(2, 5) * (attempt + 1)
+                    delay = random.uniform(3, 6) * (attempt + 1)
                     logger.info(f"Retry {attempt + 1}/{max_retries} after {delay:.1f}s delay")
                     await asyncio.sleep(delay)
                 
-                async with self.session.get(url, allow_redirects=True) as response:
-                    # Handle Cloudflare challenge pages
-                    if response.status == 403:
-                        logger.warning(f"403 Forbidden - Cloudflare protection detected (attempt {attempt + 1})")
+                # Create a new context for each request to avoid cookie/session issues
+                context = await self.browser.new_context(
+                    viewport={'width': 1920, 'height': 1080},
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    locale='tr-TR',
+                    timezone_id='Europe/Istanbul',
+                )
+                
+                page: Page = await context.new_page()
+                
+                try:
+                    # Navigate to page and wait for network to be idle
+                    response = await page.goto(
+                        url,
+                        wait_until='networkidle',
+                        timeout=60000
+                    )
+                    
+                    if not response:
+                        logger.warning(f"No response for {url} (attempt {attempt + 1})")
+                        await context.close()
                         if attempt < max_retries - 1:
-                            await asyncio.sleep(random.uniform(5, 10))
                             continue
                         return None
                     
-                    if response.status == 521:
-                        logger.warning(f"521 Cloudflare error (attempt {attempt + 1})")
-                        if attempt < max_retries - 1:
-                            await asyncio.sleep(random.uniform(5, 10))
-                            continue
-                        return None
-                    
-                    if response.status != 200:
-                        logger.warning(f"Status {response.status} for {url}")
+                    # Check for Cloudflare challenge
+                    if response.status == 403 or response.status == 521:
+                        logger.warning(f"Cloudflare protection detected (status {response.status}, attempt {attempt + 1})")
+                        # Wait a bit for Cloudflare to potentially resolve
+                        await asyncio.sleep(random.uniform(5, 10))
+                        await context.close()
                         if attempt < max_retries - 1:
                             continue
                         return None
                     
-                    html = await response.text()
+                    # Wait a bit for any JavaScript to execute
+                    await asyncio.sleep(random.uniform(2, 4))
                     
-                    # Check if we got a Cloudflare challenge page
-                    if "challenge-platform" in html.lower() or "cf-browser-verification" in html.lower():
+                    # Get page content
+                    html = await page.content()
+                    
+                    # Check for Cloudflare challenge in content
+                    if "challenge-platform" in html.lower() or "cf-browser-verification" in html.lower() or "just a moment" in html.lower():
                         logger.warning(f"Cloudflare challenge page detected (attempt {attempt + 1})")
+                        await context.close()
                         if attempt < max_retries - 1:
                             await asyncio.sleep(random.uniform(10, 15))
                             continue
                         return None
                     
+                    await context.close()
                     return html
+                    
+                except Exception as e:
+                    await context.close()
+                    raise e
                     
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout on attempt {attempt + 1}")
@@ -104,7 +116,7 @@ class SchoolScraper:
     async def get_total_pages(self) -> int:
         """Extract total number of pages from pagination."""
         try:
-            html = await self.fetch_with_retry(self.base_url)
+            html = await self.fetch_with_playwright(self.base_url)
             if not html:
                 logger.error("Failed to fetch base URL after retries")
                 return 1
@@ -150,9 +162,9 @@ class SchoolScraper:
         
         try:
             # Add small delay between requests
-            await asyncio.sleep(random.uniform(1, 3))
+            await asyncio.sleep(random.uniform(2, 4))
             
-            html = await self.fetch_with_retry(url)
+            html = await self.fetch_with_playwright(url)
             if not html:
                 logger.warning(f"Failed to fetch page {page_num}")
                 return []
@@ -162,7 +174,6 @@ class SchoolScraper:
             school_names = []
             
             # Try to find school links - common patterns for school listing sites
-            # Look for links that contain school names (usually in list items or cards)
             school_links = []
             
             # Pattern 1: Links in list items with school-related classes
@@ -260,7 +271,14 @@ class SchoolScraper:
         """Scrape all pages and return unique school names."""
         total_pages = await self.get_total_pages()
         
-        tasks = [self.scrape_page(page) for page in range(1, total_pages + 1)]
+        # Process pages with limited concurrency to avoid overwhelming the server
+        semaphore = asyncio.Semaphore(2)  # Only 2 concurrent pages
+        
+        async def scrape_with_limit(page_num: int):
+            async with semaphore:
+                return await self.scrape_page(page_num)
+        
+        tasks = [scrape_with_limit(page) for page in range(1, total_pages + 1)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         all_schools = []
@@ -280,4 +298,3 @@ class SchoolScraper:
         
         logger.info(f"Total unique schools found: {len(unique_schools)}")
         return unique_schools
-
