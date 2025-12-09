@@ -5,4 +5,5 @@ lxml==4.9.3
 python-dotenv==1.0.0
 aiofiles==23.2.1
 brotli==1.2.0
+google-api-python-client==2.108.0
 
