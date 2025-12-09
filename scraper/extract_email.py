@@ -3,7 +3,7 @@ import asyncio
 import logging
 import re
 from typing import Optional, List
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -15,7 +15,7 @@ class EmailExtractor:
     def __init__(self):
         self.session = None
         self.email_pattern = re.compile(
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b'
         )
 
     async def __aenter__(self):
@@ -76,7 +76,7 @@ class EmailExtractor:
                 return email
         
         # Check contact/iletisim sections
-        contact_keywords = ["iletişim", "contact", "iletisim", "iletişim"]
+        contact_keywords = ["iletişim", "contact", "iletisim"]
         for keyword in contact_keywords:
             section = soup.find(string=re.compile(keyword, re.I))
             if section:
@@ -104,14 +104,18 @@ class EmailExtractor:
         contact_urls = []
         
         # Find links with contact keywords
-        keywords = ["iletişim", "contact", "iletisim", "iletişim", "bize-ulasin", "bize-ulaşın"]
+        keywords = ["iletişim", "contact", "iletisim", "bize-ulasin", "bize-ulaşın"]
+        seen_urls = set()
+        
         for link in soup.find_all("a", href=True):
             href = link.get("href", "")
             text = link.get_text(strip=True).lower()
             
             if any(keyword in text or keyword in href.lower() for keyword in keywords):
                 full_url = urljoin(base_url, href)
-                contact_urls.append(full_url)
+                if full_url not in seen_urls:
+                    seen_urls.add(full_url)
+                    contact_urls.append(full_url)
         
         return contact_urls
 
