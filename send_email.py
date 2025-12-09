@@ -30,34 +30,24 @@ class EmailSender:
         msg["To"] = recipient_email
         msg["Subject"] = "Öğrenciler için modern KRLE/Din Kültürü öğrenme aracı – Relingo"
         
-        body = f"""Merhaba {school_name},
+        body = """Merhaba,
 
-Ben Servan Korkmaz, Norveç'ten bir data mühendisi.
+Ben Norveç'ten Servan Korkmaz, eğitim teknolojileri geliştiren bir veri mühendisiyim.
 
-Öğrencilerin Din Kültürü/KRLE derslerini daha eğlenceli ve verimli öğrenmeleri için
-Duolingo tarzında bir platform geliştirdim: Relingo.
+Dinler, kültürler ve etik değerler üzerine etkileşimli öğrenme sunan "Relingo" adlı yapay zekâ destekli bir uygulama geliştirdim.
 
-Öğrenciler:
-- Kısa dersler
-- Quizler
-- Görsel ve sesli içerikler
-- XP, streak, oyunlaştırma
+Türkiye'deki okullara bu öğrenme yaklaşımını tanıtmak isteriz.
 
-Öğretmenler:
-- Öğrenci ilerleme paneli
-- Hazır içerikler
-- Çok kolay kullanım
+Okulunuzun uygulamanın ilk deneme sürecine katılmasını çok isteriz.
 
-Platformu buradan inceleyebilirsiniz:
-https://relingo-git-main-colsterrs-projects.vercel.app
+2 hafta ücretsiz deneyip kısa bir geri bildirim verebilirseniz bizim icin cok iyi olur.
 
-İsterseniz size ücretsiz demo sağlayabilirim.
+İnceleme bağlantısı:
 
-Bu mesajı almak istemiyorsanız "STOP" yazmanız yeterlidir.
+🌐 https://relingo-git-main-colsterrs-projects.vercel.app
 
 Saygılarımla,
-Servan Korkmaz
-Data Mühendisi – Norveç"""
+Servan Korkmaz"""
         
         msg.attach(MIMEText(body, "plain", "utf-8"))
         return msg
