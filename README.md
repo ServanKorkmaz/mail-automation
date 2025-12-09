@@ -5,7 +5,7 @@ Automated system to scrape schools in Istanbul, find their official websites, ex
 ## Features
 
 - Async/concurrent web scraping with pagination support
-- Google search integration to find official school websites
+- Google Custom Search API integration to find official school websites
 - Intelligent email extraction from multiple page sections
 - CSV data storage with progress tracking
 - Outlook SMTP email sending with rate limiting
@@ -20,9 +20,20 @@ pip install -r requirements.txt
 
 2. **Set up environment variables:**
 ```bash
-cp .env.example .env
-# Edit .env and add your Outlook credentials
+cp env.example .env
+# Edit .env and add:
+# - Outlook credentials (OUTLOOK_USER, OUTLOOK_PASS)
+# - Google Custom Search API credentials (GOOGLE_API_KEY, GOOGLE_CSE_ID)
 ```
+
+3. **Get Google Custom Search API credentials:**
+   - Go to https://console.cloud.google.com/
+   - Create a project and enable "Custom Search API"
+   - Create an API key in Credentials
+   - Go to https://programmablesearchengine.google.com/
+   - Create a Custom Search Engine (search entire web: `*`)
+   - Copy the Search Engine ID (CSE ID)
+   - Add both to your `.env` file
 
 ## Usage
 
