@@ -1,15 +1,15 @@
 # Email Automation System
 
-Automated system to scrape middle schools in Istanbul, find their official websites, extract email addresses, and send personalized Turkish emails.
+Automated system to scrape schools in Istanbul, find their official websites, extract email addresses, and send personalized emails.
 
 ## Features
 
-- ✅ Async/concurrent web scraping with pagination support
-- ✅ Google search integration to find official school websites
-- ✅ Intelligent email extraction from multiple page sections
-- ✅ CSV data storage with progress tracking
-- ✅ Outlook SMTP email sending with rate limiting
-- ✅ Comprehensive logging and error handling
+- Async/concurrent web scraping with pagination support
+- Google search integration to find official school websites
+- Intelligent email extraction from multiple page sections
+- CSV data storage with progress tracking
+- Outlook SMTP email sending with rate limiting
+- Comprehensive logging and error handling
 
 ## Installation
 
