@@ -1,6 +1,7 @@
 """Find official school websites via Google search."""
 import asyncio
 import logging
+import random
 import re
 from typing import Optional
 from urllib.parse import quote_plus
@@ -15,13 +16,22 @@ class WebsiteFinder:
     def __init__(self):
         self.session = None
         self.official_domains = [".k12.tr", ".edu.tr", ".gov.tr", "bel.tr", "meb.gov.tr"]
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        }
 
     async def __aenter__(self):
+        cookie_jar = aiohttp.CookieJar(unsafe=True)
         self.session = aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=30),
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
+            timeout=aiohttp.ClientTimeout(total=60, connect=30),
+            headers=self.headers,
+            cookie_jar=cookie_jar
         )
         return self
 

@@ -230,10 +230,25 @@ class SchoolScraper:
             seen = set()
             unique_names = []
             for name in school_names:
-                if name not in seen:
+                # Additional filtering: exclude common UI text and very short/long names
+                name_lower = name.lower()
+                exclude_patterns = [
+                    "istanbul ortaokulları", "istanbul ortaokullar",
+                    "aradığınız", "görüntüleyin", "detaylarını",
+                    "tüm detaylar", "devamını", "daha fazla",
+                    "view", "details", "more", "continue",
+                    "okul listesi", "school list", "sayfa", "page"
+                ]
+                if any(pattern in name_lower for pattern in exclude_patterns):
+                    logger.debug(f"Excluding UI text: {name}")
+                    continue
+                
+                if name not in seen and 5 < len(name) < 100:
                     seen.add(name)
                     unique_names.append(name)
             
+            if unique_names:
+                logger.debug(f"Page {page_num} sample names: {unique_names[:3]}")
             logger.info(f"Page {page_num}: Found {len(unique_names)} schools")
             return unique_names
                 
