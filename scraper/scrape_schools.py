@@ -159,35 +159,72 @@ class SchoolScraper:
             
             soup = BeautifulSoup(html, "lxml")
             
-            # Common selectors for school names
             school_names = []
             
-            # Try multiple selectors
-            selectors = [
-                ("h2", {"class": "school-name"}),
-                ("h3", {"class": "school-name"}),
-                ("a", {"class": "school-link"}),
-                ("div", {"class": "school-title"}),
-                ("span", {"class": "school-name"}),
-            ]
+            # Try to find school links - common patterns for school listing sites
+            # Look for links that contain school names (usually in list items or cards)
+            school_links = []
             
-            for tag, attrs in selectors:
-                elements = soup.find_all(tag, attrs)
-                if elements:
-                    for elem in elements:
-                        name = elem.get_text(strip=True)
-                        if name and len(name) > 3:
-                            school_names.append(name)
-                    break
+            # Pattern 1: Links in list items with school-related classes
+            for li in soup.find_all("li", class_=lambda x: x and any(word in str(x).lower() for word in ["school", "okul", "item", "card"])):
+                link = li.find("a", href=True)
+                if link:
+                    text = link.get_text(strip=True)
+                    if text and len(text) > 5 and len(text) < 100:
+                        school_links.append(text)
             
-            # Fallback: look for any h2/h3 with school-like content
-            if not school_names:
-                for tag in ["h2", "h3", "h4"]:
-                    elements = soup.find_all(tag)
-                    for elem in elements:
-                        text = elem.get_text(strip=True)
-                        if text and ("okul" in text.lower() or "ortaokul" in text.lower() or len(text.split()) <= 5):
-                            school_names.append(text)
+            # Pattern 2: Direct links with school-related href patterns
+            for link in soup.find_all("a", href=True):
+                href = link.get("href", "").lower()
+                text = link.get_text(strip=True)
+                # Check if link looks like a school detail page
+                if any(pattern in href for pattern in ["/okul/", "/school/", "/ortaokul/", "/orta-okul/"]):
+                    if text and len(text) > 5 and len(text) < 100:
+                        # Filter out common UI text
+                        if not any(ui_text in text.lower() for ui_text in [
+                            "detay", "görüntüle", "tüm detaylar", "devam", "daha fazla",
+                            "view", "details", "more", "continue", "istanbul ortaokulları"
+                        ]):
+                            school_links.append(text)
+            
+            # Pattern 3: Look for headings in school cards/items
+            for card in soup.find_all(["div", "article", "section"], class_=lambda x: x and any(
+                word in str(x).lower() for word in ["card", "item", "school", "okul", "list"]
+            )):
+                # Find the main heading or link in the card
+                heading = card.find(["h2", "h3", "h4", "h5"])
+                if heading:
+                    text = heading.get_text(strip=True)
+                    if text and len(text) > 5 and len(text) < 100:
+                        if not any(ui_text in text.lower() for ui_text in [
+                            "detay", "görüntüle", "tüm detaylar", "istanbul ortaokulları"
+                        ]):
+                            school_links.append(text)
+                else:
+                    # Try to find a link in the card
+                    link = card.find("a", href=True)
+                    if link:
+                        text = link.get_text(strip=True)
+                        if text and len(text) > 5 and len(text) < 100:
+                            if not any(ui_text in text.lower() for ui_text in [
+                                "detay", "görüntüle", "tüm detaylar", "istanbul ortaokulları"
+                            ]):
+                                school_links.append(text)
+            
+            # Pattern 4: Look for table rows with school data
+            for row in soup.find_all("tr"):
+                cells = row.find_all(["td", "th"])
+                for cell in cells:
+                    link = cell.find("a", href=True)
+                    if link:
+                        text = link.get_text(strip=True)
+                        if text and len(text) > 5 and len(text) < 100:
+                            if not any(ui_text in text.lower() for ui_text in [
+                                "detay", "görüntüle", "tüm detaylar", "istanbul ortaokulları"
+                            ]):
+                                school_links.append(text)
+            
+            school_names = school_links
             
             # Remove duplicates while preserving order
             seen = set()
