@@ -44,48 +44,97 @@ class WebsiteFinder:
         url_lower = url.lower()
         return any(domain in url_lower for domain in self.official_domains)
 
-    async def search_google(self, query: str, max_results: int = 10) -> list[str]:
-        """Perform Google search and return result URLs."""
-        try:
-            encoded_query = quote_plus(query)
-            # Use Google search URL
-            search_url = f"https://www.google.com/search?q={encoded_query}&num={max_results}"
-            
-            async with self.session.get(search_url) as response:
-                if response.status != 200:
-                    logger.warning(f"Google search returned status {response.status}")
-                    return []
+    async def search_google(self, query: str, max_results: int = 10, max_retries: int = 3) -> list[str]:
+        """Perform Google search and return result URLs with retry logic."""
+        encoded_query = quote_plus(query)
+        search_url = f"https://www.google.com/search?q={encoded_query}&num={max_results}"
+        
+        for attempt in range(max_retries):
+            try:
+                # Add delay to avoid rate limiting
+                if attempt > 0:
+                    delay = random.uniform(10, 20) * (attempt + 1)  # Exponential backoff
+                    logger.info(f"Retrying Google search (attempt {attempt + 1}/{max_retries}) after {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                else:
+                    # Even first request should have a small delay
+                    await asyncio.sleep(random.uniform(2, 5))
                 
-                html = await response.text()
-                soup = BeautifulSoup(html, "lxml")
-                
-                urls = []
-                
-                # Extract links from search results
-                for link in soup.find_all("a", href=True):
-                    href = link.get("href", "")
-                    if href.startswith("/url?q="):
-                        url = href.split("/url?q=")[1].split("&")[0]
-                        if url.startswith("http"):
-                            urls.append(url)
-                    elif href.startswith("http") and "google.com" not in href:
-                        urls.append(href)
-                
-                # Also try data-ved links
-                for div in soup.find_all("div", {"data-ved": True}):
-                    link = div.find("a", href=True)
-                    if link:
+                async with self.session.get(search_url, allow_redirects=True) as response:
+                    # Handle rate limiting
+                    if response.status == 429:
+                        logger.warning(f"Google rate limit (429) - attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(random.uniform(30, 60))  # Longer wait for 429
+                            continue
+                        return []
+                    
+                    if response.status == 503:
+                        logger.warning(f"Google service unavailable (503) - attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(random.uniform(20, 40))
+                            continue
+                        return []
+                    
+                    if response.status != 200:
+                        logger.warning(f"Google search returned status {response.status}")
+                        if attempt < max_retries - 1:
+                            continue
+                        return []
+                    
+                    html = await response.text()
+                    
+                    # Check for CAPTCHA or blocking
+                    if "sorry" in html.lower() or "captcha" in html.lower() or "unusual traffic" in html.lower():
+                        logger.warning(f"Google CAPTCHA/blocking detected - attempt {attempt + 1}/{max_retries}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(random.uniform(60, 120))  # Very long wait
+                            continue
+                        return []
+                    
+                    soup = BeautifulSoup(html, "lxml")
+                    urls = []
+                    
+                    # Extract links from search results
+                    for link in soup.find_all("a", href=True):
                         href = link.get("href", "")
                         if href.startswith("/url?q="):
                             url = href.split("/url?q=")[1].split("&")[0]
-                            if url.startswith("http") and url not in urls:
+                            if url.startswith("http") and "google.com" not in url:
                                 urls.append(url)
-                
-                return urls[:max_results]
-                
-        except Exception as e:
-            logger.error(f"Error searching Google: {e}")
-            return []
+                        elif href.startswith("http") and "google.com" not in href and "webcache" not in href:
+                            urls.append(href)
+                    
+                    # Also try data-ved links
+                    for div in soup.find_all("div", {"data-ved": True}):
+                        link = div.find("a", href=True)
+                        if link:
+                            href = link.get("href", "")
+                            if href.startswith("/url?q="):
+                                url = href.split("/url?q=")[1].split("&")[0]
+                                if url.startswith("http") and url not in urls and "google.com" not in url:
+                                    urls.append(url)
+                    
+                    # Remove duplicates
+                    unique_urls = []
+                    seen = set()
+                    for url in urls:
+                        if url not in seen:
+                            seen.add(url)
+                            unique_urls.append(url)
+                    
+                    return unique_urls[:max_results]
+                    
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout on Google search (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    continue
+            except Exception as e:
+                logger.error(f"Error searching Google (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    continue
+        
+        return []
 
     async def find_official_website(self, school_name: str) -> Optional[str]:
         """Find official website for a school."""
@@ -112,18 +161,27 @@ class WebsiteFinder:
             logger.error(f"Error finding website for {school_name}: {e}")
             return None
 
-    async def find_websites_batch(self, school_names: list[str], max_concurrent: int = 5) -> dict[str, Optional[str]]:
-        """Find websites for multiple schools concurrently."""
+    async def find_websites_batch(self, school_names: list[str], max_concurrent: int = 2) -> dict[str, Optional[str]]:
+        """Find websites for multiple schools concurrently with strict rate limiting."""
+        # Reduced concurrency to avoid Google blocking
         semaphore = asyncio.Semaphore(max_concurrent)
         results = {}
         
-        async def find_with_limit(school_name: str):
+        async def find_with_limit(school_name: str, index: int):
             async with semaphore:
+                # Stagger requests to avoid hitting rate limits
+                if index > 0:
+                    delay = random.uniform(5, 10)  # 5-10 seconds between requests
+                    logger.debug(f"Waiting {delay:.1f}s before searching for {school_name[:30]}...")
+                    await asyncio.sleep(delay)
+                
                 website = await self.find_official_website(school_name)
                 results[school_name] = website
-                await asyncio.sleep(1)  # Rate limiting
+                
+                # Additional delay after each request
+                await asyncio.sleep(random.uniform(3, 6))
         
-        tasks = [find_with_limit(name) for name in school_names]
+        tasks = [find_with_limit(name, idx) for idx, name in enumerate(school_names)]
         await asyncio.gather(*tasks, return_exceptions=True)
         
         return results
