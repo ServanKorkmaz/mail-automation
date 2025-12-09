@@ -43,6 +43,9 @@ class EmailExtractor:
 
     async def fetch_page(self, url: str) -> Optional[str]:
         """Fetch HTML content from URL."""
+        if not self.session:
+            logger.error("Session not initialized")
+            return None
         try:
             async with self.session.get(url) as response:
                 if response.status != 200:
@@ -61,7 +64,9 @@ class EmailExtractor:
         soup = BeautifulSoup(html, "lxml")
         
         # Check footer
-        footer = soup.find("footer") or soup.find("div", class_=re.compile("footer", re.I))
+        footer = soup.find("footer")
+        if not footer:
+            footer = soup.find("div", class_=lambda x: x and "footer" in x.lower() if x else False)
         if footer:
             emails = self.extract_emails_from_text(footer.get_text())
             if emails:
@@ -78,13 +83,14 @@ class EmailExtractor:
         # Check contact/iletisim sections
         contact_keywords = ["iletişim", "contact", "iletisim"]
         for keyword in contact_keywords:
-            section = soup.find(string=re.compile(keyword, re.I))
-            if section:
-                parent = section.find_parent()
-                if parent:
-                    emails = self.extract_emails_from_text(parent.get_text())
-                    if emails:
-                        return emails[0]
+            sections = soup.find_all(string=re.compile(keyword, re.I))
+            for section in sections:
+                if section:
+                    parent = section.find_parent()
+                    if parent:
+                        emails = self.extract_emails_from_text(parent.get_text())
+                        if emails:
+                            return emails[0]
         
         # Check entire page
         page_text = soup.get_text()
