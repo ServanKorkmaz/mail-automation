@@ -55,13 +55,26 @@ class WebsiteFinder:
             return urls
             
         except HttpError as e:
-            if e.resp.status == 429:
+            if e.resp.status == 400:
+                error_details = str(e)
+                if "API key not valid" in error_details:
+                    logger.error(f"Invalid API key. Please check your GOOGLE_API_KEY in .env file.")
+                    logger.error(f"Make sure the API key is enabled for 'Custom Search API' in Google Cloud Console.")
+                elif "invalid" in error_details.lower() or "badRequest" in error_details:
+                    logger.error(f"Google API request error: {error_details}")
+                else:
+                    logger.error(f"Google API error (400): {e}")
+            elif e.resp.status == 429:
                 logger.error("Google API rate limit exceeded. Free tier: 100 searches/day")
             else:
-                logger.error(f"Google API error: {e}")
+                logger.error(f"Google API error (status {e.resp.status}): {e}")
             return []
         except Exception as e:
-            logger.error(f"Error searching Google API: {e}")
+            error_str = str(e)
+            if "SSL" in error_str or "ssl" in error_str:
+                logger.warning(f"SSL error (may be transient): {e}")
+            else:
+                logger.error(f"Error searching Google API: {e}")
             return []
 
     def find_official_website(self, school_name: str) -> Optional[str]:
