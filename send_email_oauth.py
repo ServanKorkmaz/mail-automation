@@ -1,4 +1,4 @@
-"""Send emails via Outlook SMTP."""
+"""Send emails via Outlook SMTP using OAuth2 (alternative method)."""
 import logging
 import os
 import random
@@ -12,7 +12,12 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-class EmailSender:
+class EmailSenderOAuth:
+    """
+    Alternative email sender using OAuth2.
+    Note: This requires setting up an Azure App Registration.
+    For simpler solution, try creating a NEW app password after enabling 2FA.
+    """
     def __init__(self, smtp_server: str = "smtp.office365.com", smtp_port: int = 587):
         self.smtp_server = smtp_server
         self.smtp_port = smtp_port
@@ -50,7 +55,7 @@ Servan Korkmaz"""
         return msg
 
     def send_email(self, recipient_email: str, school_name: str) -> bool:
-        """Send email via SMTP."""
+        """Send email via SMTP with app password."""
         try:
             msg = self.create_email(school_name, recipient_email)
             
@@ -59,25 +64,26 @@ Servan Korkmaz"""
                 server.login(self.username, self.password)
                 server.send_message(msg)
             
-            logger.info(f"Email sent to {school_name} ({recipient_email})")
+            logger.info(f"✓ Email sent to {school_name} ({recipient_email})")
             return True
             
         except smtplib.SMTPAuthenticationError as e:
             error_msg = str(e)
             if "basic authentication is disabled" in error_msg.lower() or "535" in error_msg:
-                logger.error(f"❌ Authentication failed: Outlook has disabled basic authentication")
+                logger.error(f"❌ Authentication failed: Basic auth is disabled")
                 logger.error(f"")
-                logger.error(f"📋 IMPORTANT: You MUST enable 2FA FIRST before app passwords will work!")
+                logger.error(f"🔧 Try these solutions:")
+                logger.error(f"   1. Create a NEW app password AFTER enabling 2FA:")
+                logger.error(f"      - Go to: https://account.microsoft.com/security")
+                logger.error(f"      - Click 'Administrer' under 'Totrinnskontroll'")
+                logger.error(f"      - Find 'App passwords' section")
+                logger.error(f"      - Create a NEW app password")
+                logger.error(f"      - Update OUTLOOK_PASS in .env")
                 logger.error(f"")
-                logger.error(f"🔧 Steps to fix:")
-                logger.error(f"   1. Go to: https://account.microsoft.com/security")
-                logger.error(f"   2. Enable 'Totrinnskontroll' (Two-step verification) - click 'Aktiver'")
-                logger.error(f"   3. After 2FA is enabled, go to 'Advanced security options'")
-                logger.error(f"   4. Create a NEW App Password for 'Email Automation'")
-                logger.error(f"   5. Copy the 16-character password (no spaces)")
-                logger.error(f"   6. Update OUTLOOK_PASS in .env with the NEW app password")
-                logger.error(f"")
-                logger.error(f"⚠️  Note: App passwords created BEFORE enabling 2FA will NOT work!")
+                logger.error(f"   2. If that doesn't work, Microsoft may have disabled")
+                logger.error(f"      basic auth for your account. Consider using:")
+                logger.error(f"      - Gmail SMTP instead (easier setup)")
+                logger.error(f"      - Or a different email service")
             else:
                 logger.error(f"Authentication failed: {e}")
             return False

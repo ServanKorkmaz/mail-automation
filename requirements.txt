@@ -7,4 +7,5 @@ aiofiles==23.2.1
 brotli==1.2.0
 google-api-python-client==2.108.0
 playwright==1.57.0
+msal==1.28.0
 
