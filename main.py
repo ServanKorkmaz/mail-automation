@@ -56,7 +56,7 @@ async def extract_emails(websites: dict[str, str | None]) -> dict[str, str]:
 
 
 def save_to_csv(schools_data: list[dict], csv_path: str = "schools.csv"):
-    """Save school data to CSV."""
+    """Save school data to CSV with better organization."""
     df = pd.DataFrame(schools_data)
     
     # Ensure 'contacted' column exists with default 'no'
@@ -70,8 +70,46 @@ def save_to_csv(schools_data: list[dict], csv_path: str = "schools.csv"):
             df[col] = ""
     
     df = df[required_columns]
-    df.to_csv(csv_path, index=False)
-    logger.info(f"Saved {len(df)} schools to {csv_path}")
+    
+    # Clean and organize data
+    # Remove rows with invalid school names (UI text, placeholders)
+    invalid_patterns = [
+        "istanbul ortaokulları", "istanbul ortaokullar",
+        "aradığınız", "görüntüleyin", "detaylarını",
+        "tüm detaylar", "giriş yap", "devamını",
+        "okul listesi", "school list", "sayfa", "page"
+    ]
+    
+    def is_valid_school_name(name: str) -> bool:
+        if not name or len(name) < 5:
+            return False
+        name_lower = str(name).lower()
+        return not any(pattern in name_lower for pattern in invalid_patterns)
+    
+    df = df[df["name"].apply(is_valid_school_name)].copy()
+    
+    # Sort by: 1) Has email, 2) Has website, 3) Name alphabetically
+    df["_sort_key"] = (
+        df["email"].apply(lambda x: 0 if x == "NOT FOUND" else 1) * 100 +
+        df["website"].apply(lambda x: 0 if not x or x == "" else 1) * 10 +
+        df["name"].str.lower().str[0].apply(ord)
+    )
+    df = df.sort_values("_sort_key", ascending=False).drop("_sort_key", axis=1)
+    
+    # Reset index for clean numbering
+    df = df.reset_index(drop=True)
+    
+    # Save with UTF-8 encoding and proper formatting
+    df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+    
+    # Log statistics
+    total = len(df)
+    with_email = len(df[df["email"] != "NOT FOUND"])
+    with_website = len(df[df["website"].notna() & (df["website"] != "")])
+    contacted = len(df[df["contacted"].str.lower() == "yes"])
+    
+    logger.info(f"Saved {total} schools to {csv_path}")
+    logger.info(f"Statistics: {with_email} with email, {with_website} with website, {contacted} contacted")
 
 
 def load_existing_csv(csv_path: str = "schools.csv") -> pd.DataFrame | None:
