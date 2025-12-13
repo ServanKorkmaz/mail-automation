@@ -34,16 +34,14 @@ class EmailSender:
 Ben Norveç'ten Servan Korkmaz, eğitim teknolojileri geliştiren bir veri mühendisiyim.
 
 Dinler, kültürler ve etik değerler üzerine etkileşimli öğrenme sunan "Relingo" adlı yapay zekâ destekli bir uygulama geliştirdim.
-
 Türkiye'deki okullara bu öğrenme yaklaşımını tanıtmak isteriz.
 
 Okulunuzun uygulamanın ilk deneme sürecine katılmasını çok isteriz.
-
-2 hafta ücretsiz deneyip kısa bir geri bildirim verebilirseniz bizim icin cok iyi olur.
+2 hafta ücretsiz deneyip kısa bir geri bildirim verebilirseniz bizim icin cok degerli olur.
 
 İnceleme bağlantısı:
+🌐 https://relingo-qs8k.vercel.app/
 
-🌐 https://relingo-git-main-colsterrs-projects.vercel.app
 
 Saygılarımla,
 Servan Korkmaz"""
