@@ -108,6 +108,16 @@ class WebsiteFinder:
 
     def find_official_website(self, school_name: str) -> Optional[str]:
         """Find official website for a school."""
+        # Ensure school name is properly encoded as UTF-8
+        if isinstance(school_name, bytes):
+            school_name = school_name.decode('utf-8', errors='ignore')
+        
+        # Clean and normalize the school name
+        school_name = school_name.strip()
+        if not school_name or len(school_name) < 3:
+            logger.debug(f"Skipping invalid school name: {school_name}")
+            return None
+        
         query = f'"{school_name}" resmi web sitesi'
         
         try:
@@ -116,41 +126,52 @@ class WebsiteFinder:
             # Prioritize official domains
             for url in urls:
                 if self.is_official_domain(url):
-                    logger.info(f"Found official website for {school_name}: {url}")
+                    logger.info(f"Found official website for {school_name[:50]}: {url}")
                     return url
             
             # If no official domain found, return first result
             if urls:
-                logger.info(f"Found website for {school_name}: {urls[0]}")
+                logger.info(f"Found website for {school_name[:50]}: {urls[0]}")
                 return urls[0]
             
-            logger.warning(f"No website found for {school_name}")
+            logger.debug(f"No website found for {school_name[:50]}")
             return None
             
         except Exception as e:
-            logger.error(f"Error finding website for {school_name}: {e}")
+            logger.error(f"Error finding website for {school_name[:50]}: {e}")
             return None
 
-    async def find_websites_batch(self, school_names: list[str], max_concurrent: int = 5) -> dict[str, Optional[str]]:
-        """Find websites for multiple schools concurrently."""
-        # Note: Google API is synchronous, so we run it in executor
+    async def find_websites_batch(self, school_names: list[str], max_concurrent: int = 1) -> dict[str, Optional[str]]:
+        """Find websites for multiple schools with strict rate limiting."""
+        # Reduced concurrency to 1 to avoid SSL/timeout issues
+        # Process sequentially with delays between requests
         loop = asyncio.get_event_loop()
         results = {}
         
-        async def find_with_delay(school_name: str, index: int):
-            # Small delay to respect rate limits (100 requests/day free tier)
-            if index > 0:
-                await asyncio.sleep(0.5)  # 0.5s delay between requests
+        for idx, school_name in enumerate(school_names):
+            # Add delay between requests to avoid overwhelming the API
+            if idx > 0:
+                delay = random.uniform(2, 4)  # 2-4 seconds between requests
+                await asyncio.sleep(delay)
             
             # Run synchronous API call in executor
-            website = await loop.run_in_executor(
-                None, 
-                self.find_official_website, 
-                school_name
-            )
-            results[school_name] = website
+            try:
+                website = await loop.run_in_executor(
+                    None, 
+                    self.find_official_website, 
+                    school_name
+                )
+                results[school_name] = website
+                
+                # Log progress every 10 schools
+                if (idx + 1) % 10 == 0:
+                    found_count = sum(1 for v in results.values() if v)
+                    logger.info(f"Progress: {idx + 1}/{len(school_names)} schools processed, {found_count} websites found")
+                    
+            except Exception as e:
+                logger.error(f"Error processing {school_name[:50]}: {e}")
+                results[school_name] = None
         
-        tasks = [find_with_delay(name, idx) for idx, name in enumerate(school_names)]
-        await asyncio.gather(*tasks, return_exceptions=True)
-        
+        found_count = sum(1 for v in results.values() if v)
+        logger.info(f"Website finding complete: {found_count}/{len(school_names)} websites found")
         return results
