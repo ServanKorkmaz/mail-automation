@@ -2,6 +2,8 @@
 import asyncio
 import logging
 import os
+import random
+import time
 from typing import Optional
 
 from googleapiclient.discovery import build
@@ -36,46 +38,73 @@ class WebsiteFinder:
         url_lower = url.lower()
         return any(domain in url_lower for domain in self.official_domains)
 
-    def search_google_api(self, query: str, max_results: int = 10) -> list[str]:
-        """Perform Google search using Custom Search API."""
-        try:
-            result = self.service.cse().list(
-                q=query,
-                cx=self.cse_id,
-                num=min(max_results, 10)  # API limit is 10 per request
-            ).execute()
-            
-            urls = []
-            if "items" in result:
-                for item in result["items"]:
-                    url = item.get("link", "")
-                    if url:
-                        urls.append(url)
-            
-            return urls
-            
-        except HttpError as e:
-            if e.resp.status == 400:
-                error_details = str(e)
-                if "API key not valid" in error_details:
-                    logger.error(f"Invalid API key. Please check your GOOGLE_API_KEY in .env file.")
-                    logger.error(f"Make sure the API key is enabled for 'Custom Search API' in Google Cloud Console.")
-                elif "invalid" in error_details.lower() or "badRequest" in error_details:
-                    logger.error(f"Google API request error: {error_details}")
+    def search_google_api(self, query: str, max_results: int = 10, max_retries: int = 3) -> list[str]:
+        """Perform Google search using Custom Search API with retry logic."""
+        # Ensure query is properly encoded
+        if isinstance(query, bytes):
+            query = query.decode('utf-8', errors='ignore')
+        
+        for attempt in range(max_retries):
+            try:
+                result = self.service.cse().list(
+                    q=query,
+                    cx=self.cse_id,
+                    num=min(max_results, 10)  # API limit is 10 per request
+                ).execute()
+                
+                urls = []
+                if "items" in result:
+                    for item in result["items"]:
+                        url = item.get("link", "")
+                        if url:
+                            urls.append(url)
+                
+                return urls
+                
+            except HttpError as e:
+                if e.resp.status == 400:
+                    error_details = str(e)
+                    if "API key not valid" in error_details:
+                        logger.error(f"Invalid API key. Please check your GOOGLE_API_KEY in .env file.")
+                        logger.error(f"Make sure the API key is enabled for 'Custom Search API' in Google Cloud Console.")
+                        return []  # Don't retry invalid API key
+                    elif "invalid" in error_details.lower() or "badRequest" in error_details:
+                        logger.warning(f"Google API request error (attempt {attempt + 1}/{max_retries}): {error_details}")
+                    else:
+                        logger.warning(f"Google API error 400 (attempt {attempt + 1}/{max_retries}): {e}")
+                elif e.resp.status == 429:
+                    logger.error("Google API rate limit exceeded. Free tier: 100 searches/day")
+                    return []  # Don't retry rate limit
                 else:
-                    logger.error(f"Google API error (400): {e}")
-            elif e.resp.status == 429:
-                logger.error("Google API rate limit exceeded. Free tier: 100 searches/day")
-            else:
-                logger.error(f"Google API error (status {e.resp.status}): {e}")
-            return []
-        except Exception as e:
-            error_str = str(e)
-            if "SSL" in error_str or "ssl" in error_str:
-                logger.warning(f"SSL error (may be transient): {e}")
-            else:
-                logger.error(f"Error searching Google API: {e}")
-            return []
+                    logger.warning(f"Google API error {e.resp.status} (attempt {attempt + 1}/{max_retries}): {e}")
+                
+                if attempt < max_retries - 1:
+                    time.sleep(random.uniform(2, 5) * (attempt + 1))
+                    continue
+                return []
+                
+            except Exception as e:
+                error_str = str(e)
+                is_ssl_error = "SSL" in error_str or "ssl" in error_str
+                is_timeout = "timeout" in error_str.lower() or "timed out" in error_str.lower()
+                is_connection = "connection" in error_str.lower() or "read operation" in error_str.lower()
+                
+                if is_ssl_error or is_timeout or is_connection:
+                    logger.warning(f"Network error (attempt {attempt + 1}/{max_retries}): {e}")
+                    if attempt < max_retries - 1:
+                        # Exponential backoff for network errors
+                        delay = random.uniform(3, 8) * (attempt + 1)
+                        time.sleep(delay)
+                        continue
+                else:
+                    logger.error(f"Error searching Google API: {e}")
+                    if attempt < max_retries - 1:
+                        time.sleep(random.uniform(1, 3))
+                        continue
+                
+                return []
+        
+        return []
 
     def find_official_website(self, school_name: str) -> Optional[str]:
         """Find official website for a school."""
